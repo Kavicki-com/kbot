@@ -10,19 +10,53 @@ interface PreviewModalProps {
 }
 
 export default function PreviewModal({ visible, onClose, botConfig }: PreviewModalProps) {
+    // Debug: Log the botConfig being received
+    console.log('🔍 PreviewModal - botConfig received:', {
+        bot_name: botConfig?.bot_name,
+        company_name: botConfig?.company_name,
+        system_prompt: botConfig?.system_prompt?.substring(0, 50) + '...',
+        tone_of_voice: botConfig?.tone_of_voice,
+        primary_color: botConfig?.primary_color,
+    });
+
     // Hardcoded for now as requested, but ideally this should come from config
     const TYPEBOT_BASE_URL = 'https://viewer-production-77fa.up.railway.app/kbot-tiwz4o9';
 
     // Pass configuration variables via URL params for Typebot to use
+    // Sanitize system prompt for JSON injection (escape newlines/quotes) by stringifying and removing surrounding quotes
+    const rawPrompt = botConfig?.system_prompt || '';
+    const sanitizedPrompt = JSON.stringify(rawPrompt).slice(1, -1);
+
     const params = new URLSearchParams({
+        // Database variables (data. prefix - stored in Typebot DB)
+        'data.company_name': botConfig?.company_name || '',
+        'data.bot_name': botConfig?.bot_name || '',
+        'data.system_prompt': sanitizedPrompt,
+        'data.tone_of_voice': botConfig?.tone_of_voice || 'professional',
+        'data.primary_color': botConfig?.primary_color || '#25D366',
+        'data.whatsapp_number': botConfig?.whatsapp_number || '',
+
+        // Typebot flow variables (no prefix - for backward compatibility)
         'company_name': botConfig?.company_name || '',
         'bot_name': botConfig?.bot_name || '',
-        'system_prompt': botConfig?.system_prompt || '',
+        'system_prompt': sanitizedPrompt,
         'tone_of_voice': botConfig?.tone_of_voice || 'professional',
-        'contact.phone': botConfig?.whatsapp_number || '5521966087421',
+        'primary_color': botConfig?.primary_color || '#25D366',
+        'whatsapp_number': botConfig?.whatsapp_number || '',
+        'bot_whatsapp_number': botConfig?.whatsapp_number || '', // For HTTP request
+        'collect_name': String(botConfig?.collect_name ?? true),
+        'collect_email': String(botConfig?.collect_email ?? true),
+        'collect_phone': String(botConfig?.collect_phone ?? true),
+        'knowledge_base_enabled': String(botConfig?.knowledge_base_enabled ?? false),
+        'is_active': String(botConfig?.is_active ?? true),
+
+        // Cache busting - force reload each time
+        '_t': Date.now().toString(),
     });
 
     const typebotUrl = `${TYPEBOT_BASE_URL}?${params.toString()}`;
+
+    console.log('🔗 PreviewModal - Generated URL:', typebotUrl);
 
     return (
         <Modal visible={visible} animationType="slide" transparent>
@@ -47,17 +81,21 @@ export default function PreviewModal({ visible, onClose, botConfig }: PreviewMod
                     {/* Webview Content */}
                     {Platform.OS === 'web' ? (
                         <iframe
+                            key={typebotUrl} // Force reload on URL change
                             src={typebotUrl}
                             style={{ border: 'none', flex: 1, width: '100%', height: '100%' }}
                             title="Typebot Preview"
                         />
                     ) : (
                         <WebView
+                            key={typebotUrl} // Force reload on URL change
                             source={{ uri: typebotUrl }}
                             style={{ flex: 1 }}
                             javaScriptEnabled={true}
                             domStorageEnabled={true}
                             startInLoadingState={true}
+                            incognito={true} // Prevent caching
+                            cacheEnabled={false} // Disable cache
                         />
                     )}
                 </View>

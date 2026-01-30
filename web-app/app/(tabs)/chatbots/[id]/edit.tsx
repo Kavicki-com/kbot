@@ -197,6 +197,12 @@ export default function EditBotScreen() {
         system_prompt: systemPrompt,
         primary_color: primaryColor,
         avatar_url: null,
+        whatsapp_number: whatsappNumber,
+        collect_name: collectName,
+        collect_email: collectEmail,
+        collect_phone: collectPhone,
+        knowledge_base_enabled: knowledgeBaseEnabled,
+        is_active: isActive,
     };
 
     if (loadingBot) {
@@ -303,7 +309,15 @@ export default function EditBotScreen() {
                     <Button
                         icon="eye"
                         mode="text"
-                        onPress={() => setPreviewVisible(true)}
+                        onPress={() => {
+                            console.log('📱 Opening preview with config:', {
+                                company_name: companyName,
+                                bot_name: botName,
+                                tone_of_voice: toneOfVoice,
+                                system_prompt: systemPrompt.substring(0, 50) + '...',
+                            });
+                            setPreviewVisible(true);
+                        }}
                         style={{ alignSelf: 'flex-start' }}
                     >
                         Testar Personalidade no Chat

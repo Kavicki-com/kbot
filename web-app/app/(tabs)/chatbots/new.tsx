@@ -124,7 +124,13 @@ export default function NewBotScreen() {
         tone_of_voice: toneOfVoice,
         system_prompt: systemPrompt,
         primary_color: primaryColor,
-        avatar_url: null, // Pode adicionar upload depois
+        avatar_url: null,
+        whatsapp_number: whatsappNumber,
+        collect_name: collectName,
+        collect_email: collectEmail,
+        collect_phone: collectPhone,
+        knowledge_base_enabled: knowledgeBaseEnabled,
+        is_active: isActive,
     };
 
     return (
