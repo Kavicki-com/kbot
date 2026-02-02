@@ -23,13 +23,19 @@ export default function WhatsAppConnectionScreen() {
     const [instance, setInstance] = useState<WhatsAppInstance | null>(null);
     const [qrCode, setQrCode] = useState<string | null>(null);
     const [status, setStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+    const [qrExpiresAt, setQrExpiresAt] = useState<string | null>(null);
+    const [timeRemaining, setTimeRemaining] = useState<number>(0);
     const pollingInterval = useRef<NodeJS.Timeout | null>(null);
+    const countdownInterval = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         loadInstance();
         return () => {
             if (pollingInterval.current) {
                 clearInterval(pollingInterval.current);
+            }
+            if (countdownInterval.current) {
+                clearInterval(countdownInterval.current);
             }
         };
     }, [id]);
@@ -49,6 +55,8 @@ export default function WhatsAppConnectionScreen() {
                 setStatus(data.status);
                 if (data.status === 'connecting' && data.qr_code) {
                     setQrCode(data.qr_code);
+                    setQrExpiresAt(data.qr_code_expires_at);
+                    startCountdown(data.qr_code_expires_at);
                     startPolling();
                 }
             }
@@ -59,6 +67,11 @@ export default function WhatsAppConnectionScreen() {
 
     async function generateQRCode() {
         setLoading(true);
+        // Clear previous state
+        setInstance(null);
+        setQrCode(null);
+        setStatus('connecting');
+
         try {
             const { data, error } = await supabase.functions.invoke('create-whatsapp-instance', {
                 body: { botId: id }
@@ -73,7 +86,11 @@ export default function WhatsAppConnectionScreen() {
             }
 
             setQrCode(data.qrCode);
+            setQrExpiresAt(data.expiresAt);
             setStatus('connecting');
+            if (data.expiresAt) {
+                startCountdown(data.expiresAt);
+            }
             startPolling();
 
         } catch (error: any) {
@@ -85,45 +102,137 @@ export default function WhatsAppConnectionScreen() {
     }
 
     function startPolling() {
-        // Poll every 3 seconds to check connection status
+        // Clear existing interval first to avoid duplicates
+        if (pollingInterval.current) clearInterval(pollingInterval.current);
+
+        // Poll every 3 seconds to check connection status AND QR code updates
         pollingInterval.current = setInterval(async () => {
             const { data } = await supabase
                 .from('whatsapp_instances')
-                .select('status, phone_number')
+                .select('status, phone_number, qr_code, qr_code_expires_at')
                 .eq('bot_configuration_id', id)
                 .single();
 
-            if (data?.status === 'connected') {
-                setStatus('connected');
-                setInstance(prev => prev ? { ...prev, status: 'connected', phone_number: data.phone_number } : null);
-                if (pollingInterval.current) {
-                    clearInterval(pollingInterval.current);
+            if (data) {
+                // Check if connected
+                if (data.status === 'connected') {
+                    setStatus('connected');
+                    setInstance(prev => prev ? { ...prev, status: 'connected', phone_number: data.phone_number } : null);
+                    if (pollingInterval.current) clearInterval(pollingInterval.current);
+                    if (countdownInterval.current) clearInterval(countdownInterval.current);
+                    return;
+                }
+
+                // Check for QR code update (if we didn't have one, or it changed)
+                if (data.status === 'connecting' && data.qr_code && data.qr_code !== qrCode) {
+                    console.log('QR Code received via polling!');
+                    setQrCode(data.qr_code);
+                    setQrExpiresAt(data.qr_code_expires_at);
+                    if (data.qr_code_expires_at) {
+                        startCountdown(data.qr_code_expires_at);
+                    }
                 }
             }
         }, 3000);
     }
 
+    function startCountdown(expiresAt: string) {
+        // Clear any existing countdown
+        if (countdownInterval.current) {
+            clearInterval(countdownInterval.current);
+        }
+
+        const updateCountdown = () => {
+            const now = new Date().getTime();
+            const expiry = new Date(expiresAt).getTime();
+            const remaining = Math.max(0, Math.floor((expiry - now) / 1000));
+
+            setTimeRemaining(remaining);
+
+            if (remaining === 0) {
+                // QR expired, auto-regenerate
+                if (countdownInterval.current) {
+                    clearInterval(countdownInterval.current);
+                }
+                generateQRCode();
+            }
+        };
+
+        updateCountdown(); // Initial update
+        countdownInterval.current = setInterval(updateCountdown, 1000);
+    }
+
+    function formatTime(seconds: number): string {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    async function cancelConnection() {
+        if (pollingInterval.current) clearInterval(pollingInterval.current);
+        if (countdownInterval.current) clearInterval(countdownInterval.current);
+
+        setLoading(true);
+        try {
+            const instanceName = `bot-${id}`;
+            const { error } = await supabase.functions.invoke('delete-whatsapp-instance', {
+                body: { instanceName }
+            });
+            // Also reset local database to be sure
+            await supabase
+                .from('whatsapp_instances')
+                .update({ status: 'disconnected', phone_number: null, qr_code: null })
+                .eq('bot_configuration_id', id);
+
+            if (error) console.error('Error deleting instance:', error);
+
+            setStatus('disconnected');
+            setQrCode(null);
+            setInstance(null);
+        } catch (error) {
+            console.error('Error canceling:', error);
+        } finally {
+            setLoading(false);
+        }
+    }
+
     async function disconnect() {
         Alert.alert(
             'Desconectar WhatsApp',
-            'Tem certeza que deseja desconectar o WhatsApp? Você precisará escanear o QR Code novamente.',
+            'Tem certeza que deseja desconectar o WhatsApp? Isso excluirá a sessão atual.',
             [
-                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Voltar', style: 'cancel' },
                 {
                     text: 'Desconectar',
                     style: 'destructive',
                     onPress: async () => {
+                        if (pollingInterval.current) clearInterval(pollingInterval.current);
+                        if (countdownInterval.current) clearInterval(countdownInterval.current);
+
+                        setLoading(true);
                         try {
-                            // Update status in database
+                            const instanceName = `bot-${id}`;
+
+                            const { error } = await supabase.functions.invoke('delete-whatsapp-instance', {
+                                body: { instanceName }
+                            });
+
+                            if (error && !error.message?.includes('400')) throw error;
+
+                            // Also reset local database to be sure
                             await supabase
                                 .from('whatsapp_instances')
-                                .update({ status: 'disconnected', phone_number: null })
+                                .update({ status: 'disconnected', phone_number: null, qr_code: null })
                                 .eq('bot_configuration_id', id);
 
                             setStatus('disconnected');
                             setQrCode(null);
+                            setInstance(null);
                         } catch (error) {
                             console.error('Error disconnecting:', error);
+                            Alert.alert('Erro', 'Falha ao desconectar. Tente novamente.');
+                        } finally {
+                            setLoading(false);
                         }
                     }
                 }
@@ -237,6 +346,29 @@ export default function WhatsAppConnectionScreen() {
                     </Card>
                 )}
 
+                {status === 'connecting' && !qrCode && (
+                    <Card style={styles.card}>
+                        <Card.Content style={styles.qrContainer}>
+                            <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: 20 }} />
+                            <Text variant="titleMedium" style={{ textAlign: 'center', marginBottom: 10 }}>
+                                Iniciando conexão...
+                            </Text>
+                            <Text variant="bodyMedium" style={{ textAlign: 'center', color: colors.textSecondary, marginBottom: 20 }}>
+                                Aguardando geração do QR Code. Se demorar, tente cancelar.
+                            </Text>
+
+                            <Button
+                                mode="outlined"
+                                onPress={cancelConnection}
+                                textColor={colors.error}
+                                style={{ borderColor: colors.error }}
+                            >
+                                Cancelar
+                            </Button>
+                        </Card.Content>
+                    </Card>
+                )}
+
                 {status === 'connecting' && qrCode && (
                     <Card style={styles.card}>
                         <Card.Content style={styles.qrContainer}>
@@ -253,6 +385,13 @@ export default function WhatsAppConnectionScreen() {
                                     style={styles.qrCode}
                                     resizeMode="contain"
                                 />
+                            </View>
+
+                            <View style={styles.countdownContainer}>
+                                <MaterialCommunityIcons name="timer-outline" size={20} color={colors.warning} />
+                                <Text variant="bodyMedium" style={styles.countdownText}>
+                                    Expira em: {formatTime(timeRemaining)}
+                                </Text>
                             </View>
 
                             <View style={styles.waitingIndicator}>
@@ -389,6 +528,20 @@ const styles = StyleSheet.create({
     qrCode: {
         width: 250,
         height: 250,
+    },
+    countdownContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: spacing.md,
+        gap: spacing.xs,
+        backgroundColor: colors.warning + '15',
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        borderRadius: 8,
+    },
+    countdownText: {
+        color: colors.warning,
+        fontWeight: '600',
     },
     waitingIndicator: {
         flexDirection: 'row',
