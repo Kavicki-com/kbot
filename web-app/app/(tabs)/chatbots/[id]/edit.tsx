@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { supabase } from '../../../../lib/supabase';
 import { colors, spacing } from '../../../../lib/theme';
 import PreviewModal from '../../../../components/chatbot/PreviewModal';
+import AvatarPicker from '../../../../components/AvatarPicker';
 import type { BotConfiguration } from '../../../../lib/types';
 
 const TONE_OPTIONS = [
@@ -37,6 +38,7 @@ export default function EditBotScreen() {
     const [systemPrompt, setSystemPrompt] = useState('');
     const [primaryColor, setPrimaryColor] = useState('#25D366');
     const [whatsappNumber, setWhatsappNumber] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
     // Toggles
     const [collectName, setCollectName] = useState(true);
@@ -68,6 +70,7 @@ export default function EditBotScreen() {
                 systemPrompt !== originalData.system_prompt ||
                 primaryColor !== originalData.primary_color ||
                 whatsappNumber !== (originalData.whatsapp_number || '') ||
+                avatarUrl !== originalData.avatar_url ||
                 collectName !== originalData.collect_name ||
                 collectEmail !== originalData.collect_email ||
                 collectPhone !== originalData.collect_phone ||
@@ -76,7 +79,7 @@ export default function EditBotScreen() {
             setHasChanges(changed);
         }
     }, [companyName, botName, toneOfVoice, systemPrompt, primaryColor, whatsappNumber,
-        collectName, collectEmail, collectPhone, knowledgeBaseEnabled, isActive, originalData]);
+        collectName, collectEmail, collectPhone, knowledgeBaseEnabled, isActive, avatarUrl, originalData]);
 
     async function loadBot() {
         try {
@@ -96,6 +99,7 @@ export default function EditBotScreen() {
                 setSystemPrompt(data.system_prompt);
                 setPrimaryColor(data.primary_color);
                 setWhatsappNumber(data.whatsapp_number || '');
+                setAvatarUrl(data.avatar_url);
                 setCollectName(data.collect_name);
                 setCollectEmail(data.collect_email);
                 setCollectPhone(data.collect_phone);
@@ -116,6 +120,129 @@ export default function EditBotScreen() {
         const isDefaultPrompt = Object.values(DEFAULT_PROMPTS).includes(systemPrompt);
         if (isDefaultPrompt && DEFAULT_PROMPTS[value]) {
             setSystemPrompt(DEFAULT_PROMPTS[value]);
+        }
+    }
+
+    async function handleAvatarUpload(imageUri: string) {
+        try {
+            console.log('📤 Starting avatar upload, imageUri type:', typeof imageUri, 'length:', imageUri.length);
+            console.log('📤 imageUri preview:', imageUri.substring(0, 100) + '...');
+
+            let arrayBuffer: ArrayBuffer;
+            let contentType: string;
+
+            // Check if it's a data URL (from web) or file URI (from mobile)
+            if (imageUri.startsWith('data:')) {
+                console.log('🌐 Processing data URL from web');
+                // Extract base64 data
+                const base64Data = imageUri.split(',')[1];
+                const mimeType = imageUri.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
+                contentType = mimeType;
+
+                // Convert base64 to ArrayBuffer
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                arrayBuffer = bytes.buffer;
+                console.log('📦 Converted data URL to ArrayBuffer, size:', arrayBuffer.byteLength);
+            } else {
+                console.log('📱 Processing file URI from mobile');
+                // Read the file as base64
+                const response = await fetch(imageUri);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch image: ${response.statusText}`);
+                }
+
+                const blob = await response.blob();
+                console.log('📦 Blob created, size:', blob.size, 'type:', blob.type);
+
+                if (blob.size === 0) {
+                    throw new Error('Image file is empty');
+                }
+
+                contentType = blob.type;
+                arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        if (reader.result) {
+                            resolve(reader.result as ArrayBuffer);
+                        } else {
+                            reject(new Error('Failed to read file'));
+                        }
+                    };
+                    reader.onerror = () => reject(new Error('FileReader error'));
+                    reader.readAsArrayBuffer(blob);
+                });
+                console.log('📊 ArrayBuffer created, size:', arrayBuffer.byteLength);
+            }
+
+            // Generate unique filename
+            const fileExt = contentType.split('/')[1] || 'jpg';
+            const fileName = `${id}/avatar-${Date.now()}.${fileExt}`;
+            console.log('📝 Generated filename:', fileName);
+
+            // Upload to Supabase Storage
+            console.log('⬆️ Uploading to Supabase...');
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('bot-avatars')
+                .upload(fileName, arrayBuffer, {
+                    contentType: contentType,
+                    upsert: true,
+                });
+
+            if (uploadError) {
+                console.error('❌ Upload error:', uploadError);
+                throw new Error(`Upload failed: ${uploadError.message}`);
+            }
+            console.log('✅ Upload successful:', uploadData);
+
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('bot-avatars')
+                .getPublicUrl(fileName);
+
+            console.log('🔗 Public URL:', publicUrl);
+
+            if (!publicUrl) {
+                throw new Error('Failed to get public URL');
+            }
+
+            // Update state
+            setAvatarUrl(publicUrl);
+            console.log('✅ Avatar URL state updated to:', publicUrl);
+            setSnackbar({ visible: true, message: 'Avatar atualizado com sucesso!', error: false });
+        } catch (error: any) {
+            console.error('❌ Error uploading avatar:', error);
+            const errorMessage = error?.message || 'Erro desconhecido';
+            setSnackbar({
+                visible: true,
+                message: `Erro ao fazer upload: ${errorMessage}`,
+                error: true
+            });
+            throw error;
+        }
+    }
+
+    async function handleAvatarRemove() {
+        try {
+            // If there's an existing avatar, try to delete it from storage
+            if (avatarUrl) {
+                const fileName = avatarUrl.split('/').pop();
+                if (fileName) {
+                    await supabase.storage
+                        .from('bot-avatars')
+                        .remove([`${id}/${fileName}`]);
+                }
+            }
+
+            // Update state
+            setAvatarUrl(null);
+            setSnackbar({ visible: true, message: 'Avatar removido com sucesso!', error: false });
+        } catch (error) {
+            console.error('Error removing avatar:', error);
+            throw error;
         }
     }
 
@@ -153,6 +280,7 @@ export default function EditBotScreen() {
                 system_prompt: systemPrompt,
                 primary_color: primaryColor,
                 whatsapp_number: whatsappNumber || null,
+                avatar_url: avatarUrl,
                 collect_name: collectName,
                 collect_email: collectEmail,
                 collect_phone: collectPhone,
@@ -196,7 +324,7 @@ export default function EditBotScreen() {
         tone_of_voice: toneOfVoice,
         system_prompt: systemPrompt,
         primary_color: primaryColor,
-        avatar_url: null,
+        avatar_url: avatarUrl,
         whatsapp_number: whatsappNumber,
         collect_name: collectName,
         collect_email: collectEmail,
@@ -405,6 +533,12 @@ export default function EditBotScreen() {
                         <MaterialCommunityIcons name="palette" size={20} color={colors.primary} /> Aparência
                     </Text>
 
+                    <AvatarPicker
+                        currentAvatarUrl={avatarUrl}
+                        onAvatarSelected={handleAvatarUpload}
+                        onAvatarRemoved={handleAvatarRemove}
+                    />
+
                     <Text variant="bodySmall" style={styles.label}>
                         Cor Principal
                     </Text>
@@ -494,7 +628,26 @@ export default function EditBotScreen() {
             <PreviewModal
                 visible={previewVisible}
                 onClose={() => setPreviewVisible(false)}
-                botConfig={currentConfig}
+                botConfig={{
+                    id: id as string,
+                    company_name: companyName,
+                    bot_name: botName,
+                    tone_of_voice: toneOfVoice,
+                    system_prompt: systemPrompt,
+                    primary_color: primaryColor,
+                    avatar_url: avatarUrl,
+                    collect_name: collectName,
+                    collect_email: collectEmail,
+                    collect_phone: collectPhone,
+                    knowledge_base_enabled: knowledgeBaseEnabled,
+                    is_active: isActive,
+                    whatsapp_number: whatsappNumber || null,
+                    whatsapp_instance_id: null,
+                    organization_id: originalData?.organization_id || '',
+                    typebot_id: originalData?.typebot_id || null,
+                    created_at: originalData?.created_at || new Date().toISOString(),
+                    updated_at: originalData?.updated_at || new Date().toISOString(),
+                }}
             />
 
             {/* Discard Changes Dialog */}

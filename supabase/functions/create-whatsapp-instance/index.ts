@@ -117,7 +117,7 @@ serve(async (req) => {
                 headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
                 body: JSON.stringify({
                     instanceName,
-                    qrcode: false, // Disabled to prevent timeouts, we will fetch it via connect
+                    qrcode: true, // Enabled to generate QR immediately - /connect endpoint returns count:0
                     integration: 'WHATSAPP-BAILEYS',
                     webhook: {
                         url: webhookUrl,
@@ -138,8 +138,26 @@ serve(async (req) => {
             }
 
             try {
-                return { success: true, data: JSON.parse(createText) }
+                const createData = JSON.parse(createText)
+                console.log('Parsed create response:', JSON.stringify(createData))
+                console.log('Checking for QR in:', {
+                    'createData.qrcode': createData.qrcode,
+                    'createData.base64': createData.base64,
+                    'createData.code': createData.code
+                })
+
+                // Check if QR code was returned in create response
+                const qrFromCreate = createData.qrcode?.base64 || createData.qrcode?.code || createData.base64 || createData.code
+                if (qrFromCreate) {
+                    console.log('✅ QR Code received in create response!', qrFromCreate.substring(0, 50) + '...')
+                    return { success: true, data: createData, qrCode: qrFromCreate }
+                }
+
+                console.log('⚠️ No QR code in create response, will need to poll')
+
+                return { success: true, data: createData }
             } catch (e) {
+                console.log('Could not parse create response, but request succeeded')
                 return { success: true, data: {} }
             }
         }
@@ -179,7 +197,12 @@ serve(async (req) => {
         if (shouldCreate) {
             const result = await createInstance()
             if (result.success) {
-                console.log('Instance created successfully. Waiting before fetching QR...')
+                console.log('Instance created successfully.')
+                // Check if QR was returned immediately
+                if (result.qrCode) {
+                    console.log('QR Code received immediately from create!')
+                    qrCodeBase64 = result.qrCode
+                }
             } else if (result.reason === 'exists') {
                 shouldCreate = false
             }

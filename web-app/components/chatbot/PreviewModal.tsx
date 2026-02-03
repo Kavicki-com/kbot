@@ -35,6 +35,7 @@ export default function PreviewModal({ visible, onClose, botConfig }: PreviewMod
         'data.tone_of_voice': botConfig?.tone_of_voice || 'professional',
         'data.primary_color': botConfig?.primary_color || '#25D366',
         'data.whatsapp_number': botConfig?.whatsapp_number || '',
+        'data.avatar_url': botConfig?.avatar_url || '',
 
         // Typebot flow variables (no prefix - for backward compatibility)
         'company_name': botConfig?.company_name || '',
@@ -43,6 +44,7 @@ export default function PreviewModal({ visible, onClose, botConfig }: PreviewMod
         'tone_of_voice': botConfig?.tone_of_voice || 'professional',
         'primary_color': botConfig?.primary_color || '#25D366',
         'whatsapp_number': botConfig?.whatsapp_number || '',
+        'avatar_url': botConfig?.avatar_url || '',
         'bot_whatsapp_number': botConfig?.whatsapp_number || '', // For HTTP request
         'collect_name': String(botConfig?.collect_name ?? true),
         'collect_email': String(botConfig?.collect_email ?? true),
