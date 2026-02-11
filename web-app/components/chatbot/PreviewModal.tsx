@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal, View, StyleSheet, Pressable, Platform, ViewStyle, TextStyle, ImageStyle, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
+import { TYPEBOT_BASE_URL } from '../../constants';
 
 interface PreviewModalProps {
     visible: boolean;
@@ -19,8 +20,7 @@ export default function PreviewModal({ visible, onClose, botConfig }: PreviewMod
         primary_color: botConfig?.primary_color,
     });
 
-    // Hardcoded for now as requested, but ideally this should come from config
-    const TYPEBOT_BASE_URL = 'https://viewer-production-77fa.up.railway.app/kbot-tiwz4o9';
+
 
     // Pass configuration variables via URL params for Typebot to use
     // Sanitize system prompt for JSON injection (escape newlines/quotes) by stringifying and removing surrounding quotes
@@ -35,6 +35,7 @@ export default function PreviewModal({ visible, onClose, botConfig }: PreviewMod
         'data.tone_of_voice': botConfig?.tone_of_voice || 'professional',
         'data.primary_color': botConfig?.primary_color || '#25D366',
         'data.whatsapp_number': botConfig?.whatsapp_number || '',
+        'data.avatar_url': botConfig?.avatar_url || '',
 
         // Typebot flow variables (no prefix - for backward compatibility)
         'company_name': botConfig?.company_name || '',
@@ -43,6 +44,7 @@ export default function PreviewModal({ visible, onClose, botConfig }: PreviewMod
         'tone_of_voice': botConfig?.tone_of_voice || 'professional',
         'primary_color': botConfig?.primary_color || '#25D366',
         'whatsapp_number': botConfig?.whatsapp_number || '',
+        'avatar_url': botConfig?.avatar_url || '',
         'bot_whatsapp_number': botConfig?.whatsapp_number || '', // For HTTP request
         'collect_name': String(botConfig?.collect_name ?? true),
         'collect_email': String(botConfig?.collect_email ?? true),
@@ -85,6 +87,8 @@ export default function PreviewModal({ visible, onClose, botConfig }: PreviewMod
                             src={typebotUrl}
                             style={{ border: 'none', flex: 1, width: '100%', height: '100%' }}
                             title="Typebot Preview"
+                            allow="camera; microphone; geolocation; clipboard-read; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                            loading="eager"
                         />
                     ) : (
                         <WebView
@@ -114,15 +118,22 @@ const styles = StyleSheet.create({
     } as ViewStyle,
     container: {
         width: Platform.OS === 'web' ? '375px' : '90%',
-        height: Platform.OS === 'web' ? '667px' : '80%',
+        height: Platform.OS === 'web' ? '600px' : '80%',
         backgroundColor: '#FFF',
         borderRadius: 20,
         overflow: 'hidden',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.3,
-        shadowRadius: 20,
-        elevation: 10,
+        ...Platform.select({
+            web: {
+                boxShadow: '0px 10px 20px rgba(0, 0, 0, 0.3)',
+            },
+            default: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 10 },
+                shadowOpacity: 0.3,
+                shadowRadius: 20,
+                elevation: 10,
+            },
+        }),
     } as ViewStyle,
     header: {
         flexDirection: 'row',

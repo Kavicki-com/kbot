@@ -1,0 +1,25 @@
+{
+    "compilerOptions": {
+        "types": [
+            "https://deno.land/x/edge_runtime@v1.47.1/types/index.d.ts"
+        ]
+    },
+    "lint": {
+        "rules": {
+            "tags": [
+                "recommended"
+            ]
+        }
+    },
+    "fmt": {
+        "useTabs": false,
+        "lineWidth": 100,
+        "indentWidth": 2,
+        "semiColons": true,
+        "singleQuote": true,
+        "proseWrap": "preserve"
+    },
+    "functions": {
+        "verify_jwt": false
+    }
+}

@@ -333,7 +333,7 @@ export default function SettingsScreen() {
 
             {/* Logout Dialog */}
             <Portal>
-                <Dialog visible={logoutDialogVisible} onDismiss={() => setLogoutDialogVisible(false)}>
+                <Dialog visible={logoutDialogVisible} onDismiss={() => setLogoutDialogVisible(false)} style={styles.dialog}>
                     <Dialog.Icon icon="logout" />
                     <Dialog.Title style={styles.dialogTitle}>Sair da Conta?</Dialog.Title>
                     <Dialog.Content>
@@ -468,5 +468,9 @@ const styles = StyleSheet.create({
     },
     dialogTitle: {
         textAlign: 'center',
+    },
+    dialog: {
+        width: 320,
+        alignSelf: 'center',
     },
 });

@@ -1,0 +1,13 @@
+# Supabase Edge Functions Configuration
+
+[functions.create-whatsapp-instance]
+verify_jwt = false
+
+[functions.delete-whatsapp-instance]
+verify_jwt = false
+
+[functions.get-bot-config]
+verify_jwt = false
+
+[functions.whatsapp-webhook]
+verify_jwt = false
